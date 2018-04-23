@@ -9,25 +9,26 @@ import time
 
 
 epoch_count = 30000
+epoch_pred_count = 5000
 use_batch = True
 batch_size = 40
-adam_gradient = 0.01
+adam_gradient_rate = 0.001
 epoch_alert = 50
 
 
 
 class Predictor(object):
-    def __init__(self, _input, _output):
-        dim = _input.shape
+    def __init__(self, n_label):
         self.input = tf.placeholder(dtype='float', shape=[None,None])
         self.output = tf.placeholder(dtype='float', shape=[None,None])
-        self.w = tf.Variable(tf.fill( (1,dim[1]), 30.0 ))
-        self.b = tf.Variable(tf.fill( (1,dim[1]), -0.3 ))
+        self.w = tf.Variable(tf.fill( (1,n_label), 30.0 ))
+        self.b = tf.Variable(tf.fill( (1,n_label), -0.3 ))
         self.saver = tf.train.Saver()
 
     def predict(self):
         p = tf.sigmoid(tf.multiply((self.input+self.b),self.w))
         return p / tf.reshape(tf.reduce_sum(p,axis=1),(-1,1))
+
 
     def loss(self):
         # KL divergence calculate for CMCL
@@ -46,7 +47,7 @@ class Predictor(object):
         return loss
 
     def learn(self):
-        return tf.train.AdamOptimizer(adam_gradient).minimize(self.loss())
+        return tf.train.AdamOptimizer(adam_gradient_rate).minimize(self.loss())
 
     def save(self, sess, path="output/net_predict_v2.ckpt"):
         self.saver.save(sess, path)
@@ -56,25 +57,16 @@ class Predictor(object):
 
 
 class Generator(object):
-    def __init__(self, datas):
-        microarray_size, label_size = datas.size()
-        self.trait_count = microarray_size         # columns (gene count)
-        self.label_count = label_size              # columns (label dimension)
-        self.datas = datas
-
+    def __init__(self, n_features, n_label):
         # make placeholder
-        self.features = tf.placeholder(dtype='float', shape=[None,self.trait_count])
-        self.label = tf.placeholder(dtype='float', shape=[None,self.label_count])
-        self.f_input = tf.placeholder(dtype='float', shape=[None,self.trait_count])
+        self.features = tf.placeholder(dtype='float', shape=[None,n_features])
+        self.label = tf.placeholder(dtype='float', shape=[None,n_label])
 
         # main weights for each genes (projection)
-        self.weight = tf.Variable(tf.random_normal( (self.trait_count,self.label_count) ))
-
-        # constant for fixed variable
-        self.ones = tf.ones( [self.trait_count,] )
+        self.weight = tf.Variable(tf.random_normal( (n_features, n_label) ))
 
         self.weight_lambda = 1    # unweight panelty --> panelty on no-prediction
-        self.rate = 0.001
+        self.rate = adam_gradient_rate
         self.saver = tf.train.Saver()
 
     def loss(self):
@@ -97,15 +89,17 @@ class Generator(object):
         return tf.train.AdamOptimizer(self.rate).minimize( loss )
 
     def predict(self):
+        ## average weight in column, to reduce weight of gene with multiplicate-feature.
         weight = tf.sigmoid(self.weight)
-        # average weight in column, to reduce weight of gene with multiplicate-feature.
-        # set weight to each gene
-        features = self.features / tf.square(tf.reduce_sum(weight, axis=1))
-        #features = self.features
-        #weight = weight / tf.reshape(tf.reduce_sum(weight, axis=1), (-1,1))     # TODO: should square?
+        #weight = weight / tf.reshape(tf.reduce_sum(weight, axis=1), (-1,1)) 
         #weight = tf.square(weight)
+
+        ## feature input
+        features = self.features
+        #features = self.features / tf.square(tf.reduce_sum(weight, axis=1))
+
         out = tf.matmul(features, weight)
-        out = out / tf.reshape(tf.reduce_sum(out, axis=1), (-1,1))
+        out = out / tf.reshape(tf.reduce_sum(out, axis=1), (-1,1))  # normalize output
         return out
 
     def save(self, sess, path="output/net_v2.ckpt"):
@@ -115,14 +109,12 @@ class Generator(object):
         self.saver.restore(sess, path)
 
     # (DEPRECIATED)
-    def save_calculated(save, sess, features, path):
+    def save_calculated(save, sess, features, path="output/net_predict_v2.csv"):
         # save calculated(predicted) result
         labels_calc = sess.run(self.predict(), feed_dict={
             self.features: features})
+        # design matrix (real result)
         labels_encoded = self.datas.labels
-        #n_values = np.max(labels_encoded) + 1
-        #labels_encoded = np.eye(n_values)[labels_encoded]
-        #label_out = np.stack( (labels_calc, self.datas.labels), axis=1)
         print labels_calc.shape
         print labels_encoded.shape
         label_out = np.concatenate( (labels_calc, labels_encoded), axis=1)
@@ -131,18 +123,18 @@ class Generator(object):
             for n2 in self.datas.label_names:
                 cols.append("%s_%s" % (n,n2))
         df_label = pd.DataFrame(data=label_out, index=self.datas.sample_names, columns=cols)
-        df_label.to_csv("output/net_predict_v2.csv")
+        df_label.to_csv(path)
     
 # --------------------------
 
 
 
-learner = Generator(datas)
+learner = Generator(4)
 op_learn = learner.learn()
 op_decode = learner.decode()
 op_loss = learner.loss()
 
-learner_pred = Predictor(_input, _output)
+learner_pred = Predictor(100,4)
 op_learn_pred = learner_pred.learn()
 
 
@@ -153,7 +145,8 @@ def init(sess):
 
 
 
-def learn(sess):
+# no return
+def learn(sess, df_expr, df_label):
     print 'learning generative ...'
     for i in range(epoch_count):
         # adaptive epoch rate?
@@ -163,9 +156,9 @@ def learn(sess):
             learner.rate = 0.001
 
         if (use_batch):
-            batch_microarrays, batch_labels = datas.batch(batch_size)
+            batch_microarrays, batch_labels = TSTools.batch(batch_size, zip(df_expr, df_label))
         else:
-            batch_microarrays, batch_labels = dd
+            batch_microarrays, batch_labels = df_expr, df_label
 
         sess.run(op_learn, feed_dict={
             learner.features: batch_microarrays,
@@ -178,70 +171,57 @@ def learn(sess):
                 learner.label: batch_labels
                 })
             print 'epoch: %d, loss: %f' % (i, np.mean(loss))
+    mat_gen = sess.run(op_decode, feed_dict={
+        learner.features: df_expr
+        })
 
     print 'learning predictor ...'
-    df = sess.run(op_decode, feed_dict={
-        learner.features: batch_microarrays,
-        learner.label: batch_labels
-        })
-    _input = df.iloc[:,0:4]
-    _output = df.iloc[:,4:8]
-    for _ in range(5000):
+    for _ in range(epoch_pred_count):
         sess.run(op_learn_pred, feed_dict={
-            learner_pred.input: _input,
-            learner_pred.output: _output
+            learner_pred.input: mat_gen,
+            learner_pred.output: df_label
             })
         learner.save(sess, df)
 
 
-def save(sess):
-    learner.save(sess)
+# returns 'numpy' matrix
+def predict(sess, df_expr):
+    mat_gen = sess.run(learner.predict(), feed_dict={
+        learner.input: df_expr
+        })
+    mat_pred = sess.run(learner_pred.predict(), feed_dict={
+        learner_pred.input: mat_gen
+        })
+    return mat_pred
 
-def restore(sess):
-    learner.restore(sess)
 
 
-def get_result(sess):
+def save(sess, path):
+    learner.save(sess, path+'.ckpt')
+    learner_pred.save(sess, path+'_predict.ckpt')
+
+def restore(sess, path):
+    learner.restore(sess, path+'.ckpt')
+    learner_pred.restore(sess, path+'_predict.ckpt')
+
+
+
+
+# return readable result (dataframe)
+def get_result(sess, df_exp, df_label):
     # save weight of generator
-    weight = sess.run(self.weight)
+    weight = sess.run(learner.weight)
     weight = 1/(1+np.exp(-weight))          # recalculate weight to sigmoid (Easy-to-interpret)
-    weight = np.reshape(weight, (-1, 8))    # gather up / down at one row
-    net = weight
-    #loss = sess.run(self.loss(), )
-    #net = np.concatenate( (weight,bias), axis=1 )
+    df_generator = pd.DataFrame(data=weight, index=df_exp.index, columns=df_label.index)
 
 
-    df = pd.DataFrame(data=net, index=idx, columns=cols)
     # save weight
-    w = sess.run(self.w)
-    b = sess.run(self.b)
-    cols = ['heat','salt','drou','cold']
-    df = pd.DataFrame(data=np.concatenate((w,b),axis=0), index=['weight','b'], columns=cols)
-    df.to_csv("output/net_predict_weight_v2.csv")
+    w = sess.run(learner_pred.w)
+    b = sess.run(learner_pred.b)
+    df_predictor = pd.DataFrame(data=np.concatenate((w,b),axis=0),
+            index=['weight','b'],
+            columns=df_label.index)
 
-
-
-    # save weight of prediction
-    p = self.predict()
-    labels_calc = sess.run(p/tf.reshape(tf.reduce_sum(p,axis=1),(-1,1)), feed_dict={
-        self.input: self._input
-        })
-    print df
-    print self._input
-    print labels_calc
-    print sess.run(self.loss(), feed_dict={
-        self.input: self._input,
-        self.output: self._output
-        })
-    #print np.multiply(self._input, ([[2,2,2,2],])) + np.tile(np.array([[1,1,1,1],]), [92,1])
-    label_out = np.concatenate( (labels_calc, self._output), axis=1)
-    df_label = pd.DataFrame(data=label_out, index=_df.index, columns=_df.columns)
-
-    # add one more column: entropy...
-    col_entropy = -np.sum(labels_calc * np.log(labels_calc), axis=1)
-    df_label['entropy'] = col_entropy
-
-    df_label.to_csv("output/net_predict_v2_filter.csv")
 
     return {
         'generator': df_generator,

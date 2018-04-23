@@ -5,16 +5,17 @@ import tensorflow as tf
 
 
 # TODO
-def reduce_df_dim(df, labels):
-    # keep original columns
-    cols = df.columns
-
-    # reduce index and generate up/down column
-    idx = self.datas.index
+# df: weight dataframe
+def reduce_df_dim(df_weight):
+    # reduce index and generate new dataframe with up/down column
+    col_cnt = df_weight.shape[1]
+    mat_weight = np.reshape(df_weight, (-1, col_cnt*2))    # gather up / down at one row
+    idx = [ x.split('_',1)[0] for x in self.datas.index[0::2] ]
     cols = []
     for n in ["up", "down"]:
-        for n2 in self.datas.label_names:
+        for n2 in df_weight.columns.tolist():
             cols.append("%s_%s" % (n,n2))
+    df = pd.DataFrame(mat_weight, columns=cols, index=idx)
 
     # regenerate max value to new stress value
     for l in cols:
@@ -49,14 +50,14 @@ def main():
             help="do reduce_max by 2 (when input data is separated updown)")
     parser.add_argument("--reopti_stress", action="store_true",
             help="do weight div by sum of row")
-    parser.add_argument("--save", type=str, default="model_v2",
+    parser.add_argument("--save", type=str, default="output/model_v2",
             help="save result in tensorflow-restorable form")
-    parser.add_argument("--save_csv", type=str, default="model_v2",
+    parser.add_argument("--save_csv", type=str, default="output/model_v2",
             help="save result in readable form (csv)")
     # parameters
     parser.add_argument("--epoch_count", type=int, default=20000)
     parser.add_argument("--batch_size", type=int, default=40)
-    parser.add_argument("--gradient", type=float, default=0.01)
+    parser.add_argument("--rate", type=float, default=0.01)
     args = parser.parse_args()
 
     # load & arrange files first
@@ -71,7 +72,7 @@ def main():
         model_v2.epoch_count = args.epoch_count
         model_v2.use_batch = args.batch_size > 0
         model_v2.batch_size = args.batch_size
-        model_v2.adam_gradient = args.gradient
+        model_v2.adam_gradient_rate = args.rate
         model_v2.init(sess)
         model_v2.learn(sess)
 
