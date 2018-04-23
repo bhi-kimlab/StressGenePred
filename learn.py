@@ -1,4 +1,3 @@
-import model_v2
 import pandas as pd
 import sys,os,argparse
 import tensorflow as tf
@@ -67,17 +66,25 @@ def main():
         labels = args.label_index.split(',')
         df_label = df_label.reindex(index=labels, fill_value=0)
 
+    # now set environments and import
+    os.environ['CNT_FEATURE'] = str(df_expr.shape[0])
+    os.environ['CNT_SAMPLE'] = str(df_expr.shape[1])
+    os.environ['CNT_LABEL'] = str(df_label.shape[0])
+    import model_v2 as model
+
+    saver = tf.train.Saver()
     with tf.Session() as sess:
         # do learning
-        model_v2.epoch_count = args.epoch_count
-        model_v2.use_batch = args.batch_size > 0
-        model_v2.batch_size = args.batch_size
-        model_v2.adam_gradient_rate = args.rate
-        model_v2.init(sess)
-        model_v2.learn(sess)
+        model.epoch_count = args.epoch_count
+        model.use_batch = args.batch_size > 0
+        model.batch_size = args.batch_size
+        model.learning_rate = args.rate
+        model.init(sess)
+        model.learn(sess)
 
         # save result if necessary
-        model_v2.save(sess, args.save)
+        if (args.save):
+            saver.save(sess, args.save+'.ckpt')
         if (args.save_csv):
             r = model_v2.get_result(sess)   # returns dict
             if (args.reduce_updown):

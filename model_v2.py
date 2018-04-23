@@ -12,18 +12,20 @@ epoch_count = 30000
 epoch_pred_count = 5000
 use_batch = True
 batch_size = 40
-adam_gradient_rate = 0.001
+learning_rate = 0.001
 epoch_alert = 50
-
+model_name = "model_v2"
 
 
 class Predictor(object):
     def __init__(self, n_label):
+        self.init(n_label)
+
+    def init(self, n_label):
         self.input = tf.placeholder(dtype='float', shape=[None,None])
         self.output = tf.placeholder(dtype='float', shape=[None,None])
         self.w = tf.Variable(tf.fill( (1,n_label), 30.0 ))
         self.b = tf.Variable(tf.fill( (1,n_label), -0.3 ))
-        self.saver = tf.train.Saver()
 
     def predict(self):
         p = tf.sigmoid(tf.multiply((self.input+self.b),self.w))
@@ -47,17 +49,14 @@ class Predictor(object):
         return loss
 
     def learn(self):
-        return tf.train.AdamOptimizer(adam_gradient_rate).minimize(self.loss())
-
-    def save(self, sess, path="output/net_predict_v2.ckpt"):
-        self.saver.save(sess, path)
-
-    def restore(self, sess, path="output/net_predict_v2.ckpt"):
-        self.saver.restore(sess, path)
+        return tf.train.AdamOptimizer(learning_rate).minimize(self.loss())
 
 
 class Generator(object):
     def __init__(self, n_features, n_label):
+        self.init(n_features, n_label)
+
+    def init(self, n_features, n_label):
         # make placeholder
         self.features = tf.placeholder(dtype='float', shape=[None,n_features])
         self.label = tf.placeholder(dtype='float', shape=[None,n_label])
@@ -66,8 +65,7 @@ class Generator(object):
         self.weight = tf.Variable(tf.random_normal( (n_features, n_label) ))
 
         self.weight_lambda = 1    # unweight panelty --> panelty on no-prediction
-        self.rate = adam_gradient_rate
-        self.saver = tf.train.Saver()
+        self.rate = learning_rate
 
     def loss(self):
         weight = self.weight
@@ -102,12 +100,6 @@ class Generator(object):
         out = out / tf.reshape(tf.reduce_sum(out, axis=1), (-1,1))  # normalize output
         return out
 
-    def save(self, sess, path="output/net_v2.ckpt"):
-        self.saver.save(sess, path)
-
-    def restore(self, sess, path="output/net_v2.ckpt"):
-        self.saver.restore(sess, path)
-
     # (DEPRECIATED)
     def save_calculated(save, sess, features, path="output/net_predict_v2.csv"):
         # save calculated(predicted) result
@@ -128,13 +120,15 @@ class Generator(object):
 # --------------------------
 
 
+cnt_feature = int(os.environ['CNT_FEATURE'])
+cnt_label = int(os.environ['CNT_LABEL'])
 
-learner = Generator(4)
+learner = Generator(100,4)
 op_learn = learner.learn()
-op_decode = learner.decode()
+op_decode = learner.predict()
 op_loss = learner.loss()
 
-learner_pred = Predictor(100,4)
+learner_pred = Predictor(4)
 op_learn_pred = learner_pred.learn()
 
 
@@ -151,9 +145,9 @@ def learn(sess, df_expr, df_label):
     for i in range(epoch_count):
         # adaptive epoch rate?
         if (i < 100):
-            learner.rate = 0.01
+            learner.rate = learning_rate*10
         elif (i < 1000):
-            learner.rate = 0.001
+            learner.rate = learning_rate
 
         if (use_batch):
             batch_microarrays, batch_labels = TSTools.batch(batch_size, zip(df_expr, df_label))
@@ -193,16 +187,6 @@ def predict(sess, df_expr):
         learner_pred.input: mat_gen
         })
     return mat_pred
-
-
-
-def save(sess, path):
-    learner.save(sess, path+'.ckpt')
-    learner_pred.save(sess, path+'_predict.ckpt')
-
-def restore(sess, path):
-    learner.restore(sess, path+'.ckpt')
-    learner_pred.restore(sess, path+'_predict.ckpt')
 
 
 

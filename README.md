@@ -6,13 +6,13 @@
 With prepared dataset,
 
 ```
-python learn.py dataset/dataset_learn_005.limma.csv dataset/dataset_learn_005.label.csv --updown --save output/model_v2 --save_csv output/model_v2
+python learn.py dataset/dataset_learn_005.limma.csv dataset/dataset_learn_005.label.csv --updown --save output/model_v2 --save_csv output/model_v2 --label_index "heat,salt,drought,cold"
 ```
 
 ### Testing prediction /w learnt parameter
 
 ```
-python test.py dataset/dataset_test_005.limma.csv dataset/dataset_test_005.label.csv --save output/model_v2_predict
+python test.py dataset/dataset_test_005.limma.csv dataset/dataset_test_005.label.csv --save output/model_v2_predict --label_index "heat,salt,drought,cold
 ```
 
 ### Testing GSEA(Gene set enrichment analysis) score /w learnt parameter
