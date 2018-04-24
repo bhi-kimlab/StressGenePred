@@ -1,6 +1,9 @@
 from TSData import TSData, TSTools
-import tensorflow
+import numpy as np
+import pandas as pd
+import tensorflow as tf
 import argparse
+from model_v2 import Model
 
 
 # append real prediction & entropy information
@@ -25,8 +28,6 @@ def main():
             help="sample-expression matrix csv file")
     parser.add_argument("file_label",
             help="sample-label matrix csv file")
-    parser.add_argument("--label_index", type=str,
-            help="do when label reindexing is necessary (separated by comma)")
     parser.add_argument("--load", type=str, default="output/model_v2",
             help="load result from tensorflow-restorable form")
     parser.add_argument("--save", type=str, default="output/model_v2_predict",
@@ -37,30 +38,30 @@ def main():
     args = parser.parse_args()
 
     # load datas
-    df_expr = pd.DataFrame(args.file_expr, index_col=0)
-    df_label = pd.DataFrame(args.file_label, index_col=0)
+    df_expr = pd.read_csv(args.file_expr, index_col=0)
+    df_label = pd.read_csv(args.file_label, index_col=0)
+    """
     if (args.label_index):
         labels = args.label_index.split(',')
         df_label = df_label.reindex(index=labels, fill_value=0)
+    """
 
     # now set environments and import
-    os.environ['CNT_FEATURE'] = str(df_expr.shape[0])
-    os.environ['CNT_SAMPLE'] = str(df_expr.shape[1])
-    os.environ['CNT_LABEL'] = str(df_label.shape[0])
-    import model_v2 as model
+    model = Model()
+    model.init(df_expr.shape[0], df_label.shape[1])
 
-    saver = tf.train.Saver()
     with tf.Session() as sess:
+        model.init_sess(sess)
         # first restore model
-        saver.restore(sess, args.load+'.ckpt')
+        model.restore(sess, args.load+'.ckpt')
         # do prediction
         if (args.raw):
             df_pred = sess.run(model.learner.predict(),
-                feed_dict={model.learner.features: df_expr})
+                feed_dict={model.learner.features: df_expr.transpose()})
         else:
-            mat_pred = model.predict(sess, df_expr)
+            mat_pred = model.predict(sess, df_expr.transpose())
         # format pred dataframe
-        df_pred = pd.DataFrame(mat_pred, columns=df_label.index, index=df_expr.columns)
+        df_pred = pd.DataFrame(mat_pred, columns=df_label.columns, index=df_expr.columns)
         df_pred = format_pred(df_pred, df_label)
         # save result
         df_pred.to_csv(args.save+'.csv')

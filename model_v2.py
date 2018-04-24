@@ -8,24 +8,15 @@ from sklearn import datasets, linear_model
 import time
 
 
-epoch_count = 30000
-epoch_pred_count = 5000
-use_batch = True
-batch_size = 40
-learning_rate = 0.001
-epoch_alert = 50
-model_name = "model_v2"
 
 
 class Predictor(object):
-    def __init__(self, n_label):
-        self.init(n_label)
-
-    def init(self, n_label):
+    def __init__(self, n_label, rate):
         self.input = tf.placeholder(dtype='float', shape=[None,None])
         self.output = tf.placeholder(dtype='float', shape=[None,None])
-        self.w = tf.Variable(tf.fill( (1,n_label), 30.0 ))
+        self.w = tf.Variable(tf.fill( (1,n_label), 10.0 ))
         self.b = tf.Variable(tf.fill( (1,n_label), -0.3 ))
+        self.rate = rate
 
     def predict(self):
         p = tf.sigmoid(tf.multiply((self.input+self.b),self.w))
@@ -49,14 +40,11 @@ class Predictor(object):
         return loss
 
     def learn(self):
-        return tf.train.AdamOptimizer(learning_rate).minimize(self.loss())
+        return tf.train.AdamOptimizer(self.rate).minimize(self.loss())
 
 
 class Generator(object):
-    def __init__(self, n_features, n_label):
-        self.init(n_features, n_label)
-
-    def init(self, n_features, n_label):
+    def __init__(self, n_features, n_label, rate):
         # make placeholder
         self.features = tf.placeholder(dtype='float', shape=[None,n_features])
         self.label = tf.placeholder(dtype='float', shape=[None,n_label])
@@ -64,8 +52,7 @@ class Generator(object):
         # main weights for each genes (projection)
         self.weight = tf.Variable(tf.random_normal( (n_features, n_label) ))
 
-        self.weight_lambda = 1    # unweight panelty --> panelty on no-prediction
-        self.rate = learning_rate
+        self.rate = rate
 
     def loss(self):
         weight = self.weight
@@ -88,6 +75,7 @@ class Generator(object):
 
     def predict(self):
         ## average weight in column, to reduce weight of gene with multiplicate-feature.
+        #weight = self.weight
         weight = tf.sigmoid(self.weight)
         #weight = weight / tf.reshape(tf.reduce_sum(weight, axis=1), (-1,1)) 
         #weight = tf.square(weight)
@@ -97,7 +85,7 @@ class Generator(object):
         #features = self.features / tf.square(tf.reduce_sum(weight, axis=1))
 
         out = tf.matmul(features, weight)
-        out = out / tf.reshape(tf.reduce_sum(out, axis=1), (-1,1))  # normalize output
+        out = out / tf.reshape(tf.reduce_sum(out, axis=1) + 0.001, (-1,1))  # normalize output + pseudovalue
         return out
 
     # (DEPRECIATED)
@@ -119,95 +107,133 @@ class Generator(object):
     
 # --------------------------
 
-
-cnt_feature = int(os.environ['CNT_FEATURE'])
-cnt_label = int(os.environ['CNT_LABEL'])
-
-learner = Generator(100,4)
-op_learn = learner.learn()
-op_decode = learner.predict()
-op_loss = learner.loss()
-
-learner_pred = Predictor(4)
-op_learn_pred = learner_pred.learn()
+class Model(object):
+    def __init__(self):
+        self.epoch_count = 30000
+        self.epoch_pred_count = 5000
+        self.use_batch = True
+        self.batch_size = 40
+        self.learning_rate = 0.001
+        self.epoch_alert = 50
+        self.model_name = "model_v2"
 
 
-
-def init(sess):
-    init = tf.global_variables_initializer()
-    sess.run(init)
-
-
-
-# no return
-def learn(sess, df_expr, df_label):
-    print 'learning generative ...'
-    for i in range(epoch_count):
-        # adaptive epoch rate?
-        if (i < 100):
-            learner.rate = learning_rate*10
-        elif (i < 1000):
-            learner.rate = learning_rate
-
-        if (use_batch):
-            batch_microarrays, batch_labels = TSTools.batch(batch_size, zip(df_expr, df_label))
+    def init(self, cnt_feature, cnt_label):
+        # ??
+        if (self.use_batch):
+            cnt_sample = self.batch_size
         else:
-            batch_microarrays, batch_labels = df_expr, df_label
+            cnt_sample = 0
 
-        sess.run(op_learn, feed_dict={
-            learner.features: batch_microarrays,
-            learner.label: batch_labels
-            })
+        self.learner = Generator(cnt_feature,cnt_label,self.learning_rate)
+        self.op_learn = self.learner.learn()
+        self.op_decode = self.learner.predict()
+        self.op_loss = self.learner.loss()
 
-        if (i%epoch_alert == 0):
-            loss = sess.run(op_loss, feed_dict={
+        self.learner_pred = Predictor(cnt_label,self.learning_rate*10)
+        self.op_learn_pred = self.learner_pred.learn()
+
+        self.saver = tf.train.Saver()
+
+
+    def save(self, sess, path):
+        self.saver.save(sess, path)
+
+    def restore(self, sess, path):
+        self.saver.restore(sess, path)
+
+    def init_sess(self, sess):
+        init = tf.global_variables_initializer()
+        sess.run(init)
+
+
+
+    # no return
+    def learn(self, sess, df_expr, df_label):
+        learner = self.learner
+        learner_pred = self.learner_pred
+        learning_rate = self.learning_rate
+        batch_size = self.batch_size
+        use_batch = self.use_batch
+        op_learn = self.op_learn
+        op_decode = self.op_decode
+        op_loss = self.op_loss
+        op_learn_pred = self.op_learn_pred
+
+        print 'learning generative ...'
+        for i in range(self.epoch_count):
+            # adaptive epoch rate?
+            if (i < 100):
+                learner.rate = learning_rate*10
+            elif (i < 1000):
+                learner.rate = learning_rate
+
+            if (use_batch):
+                batch_microarrays, batch_labels = TSTools.batch(batch_size, (df_expr.values, df_label.values), dim=0)
+            else:
+                batch_microarrays, batch_labels = df_expr, df_label
+
+            sess.run(op_learn, feed_dict={
                 learner.features: batch_microarrays,
                 learner.label: batch_labels
                 })
-            print 'epoch: %d, loss: %f' % (i, np.mean(loss))
-    mat_gen = sess.run(op_decode, feed_dict={
-        learner.features: df_expr
-        })
 
-    print 'learning predictor ...'
-    for _ in range(epoch_pred_count):
-        sess.run(op_learn_pred, feed_dict={
-            learner_pred.input: mat_gen,
-            learner_pred.output: df_label
+            if (i % self.epoch_alert == 0):
+                loss = sess.run(op_loss, feed_dict={
+                    learner.features: batch_microarrays,
+                    learner.label: batch_labels
+                    })
+                print 'epoch: %d, loss: %f' % (i, np.mean(loss))
+
+        mat_gen = sess.run(op_decode, feed_dict={
+            learner.features: df_expr
             })
-        learner.save(sess, df)
+
+        print 'learning predictor ...'
+        for _ in range(self.epoch_pred_count):
+            sess.run(op_learn_pred, feed_dict={
+                learner_pred.input: mat_gen,
+                learner_pred.output: df_label
+                })
 
 
-# returns 'numpy' matrix
-def predict(sess, df_expr):
-    mat_gen = sess.run(learner.predict(), feed_dict={
-        learner.input: df_expr
-        })
-    mat_pred = sess.run(learner_pred.predict(), feed_dict={
-        learner_pred.input: mat_gen
-        })
-    return mat_pred
+    # returns 'numpy' matrix
+    def predict(self, sess, df_expr):
+        learner = self.learner
+        learner_pred = self.learner_pred
+
+
+        mat_gen = sess.run(learner.predict(), feed_dict={
+            learner.features: df_expr
+            })
+        mat_pred = sess.run(learner_pred.predict(), feed_dict={
+            learner_pred.input: mat_gen
+            })
+        return mat_pred
 
 
 
 
-# return readable result (dataframe)
-def get_result(sess, df_exp, df_label):
-    # save weight of generator
-    weight = sess.run(learner.weight)
-    weight = 1/(1+np.exp(-weight))          # recalculate weight to sigmoid (Easy-to-interpret)
-    df_generator = pd.DataFrame(data=weight, index=df_exp.index, columns=df_label.index)
+    # return readable result (dataframe)
+    def get_result(self, sess, df_expr, df_label):
+        learner = self.learner
+        learner_pred = self.learner_pred
+
+        # save weight of generator
+        weight = sess.run(learner.weight)
+        weight = 1/(1+np.exp(-weight))          # recalculate weight to sigmoid (Easy-to-interpret)
+        df_generator = pd.DataFrame(data=weight, index=df_expr.index, columns=df_label.columns)
 
 
-    # save weight
-    w = sess.run(learner_pred.w)
-    b = sess.run(learner_pred.b)
-    df_predictor = pd.DataFrame(data=np.concatenate((w,b),axis=0),
-            index=['weight','b'],
-            columns=df_label.index)
+        # save weight
+        w = sess.run(learner_pred.w)
+        b = sess.run(learner_pred.b)
+        df_predictor = pd.DataFrame(data=np.concatenate((w,b),axis=0),
+                index=['weight','b'],
+                columns=df_label.columns)
 
 
-    return {
-        'generator': df_generator,
-        'predictor': df_predictor
-        }
+        return {
+            'generator': df_generator,
+            'predictor': df_predictor
+            }

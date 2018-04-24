@@ -6,13 +6,14 @@
 With prepared dataset,
 
 ```
-python learn.py dataset/dataset_learn_005.limma.csv dataset/dataset_learn_005.label.csv --updown --save output/model_v2 --save_csv output/model_v2 --label_index "heat,salt,drought,cold"
+python learn.py dataset/dataset_learn_v2_005.limma.csv dataset/dataset_learn_v2_005.label.csv --reduce_updown --save output/model_v2 --save_csv output/model_v2 --epoch_count 2000
 ```
 
 ### Testing prediction /w learnt parameter
 
 ```
-python test.py dataset/dataset_test_005.limma.csv dataset/dataset_test_005.label.csv --save output/model_v2_predict --label_index "heat,salt,drought,cold
+python test.py dataset/dataset_learn_v2_005.limma.csv dataset/dataset_learn_v2_005.label.csv --load output/model_v2 --save output/model_v2_test
+python test.py dataset/dataset_test_005.limma.csv dataset/dataset_test_005.label.csv --load output/model_v2 --save output/model_v2_test
 ```
 
 ### Testing GSEA(Gene set enrichment analysis) score /w learnt parameter
@@ -36,6 +37,10 @@ python ../dataset.py compile -d ./ --tool limma -t dataset_test_005
 python ../dataset.py compile -d ./ --tool limma -t dataset_test_005 --pvalue 0.05
 # processing p-value /w threshold .05, with reindexing & separating up/down signal (unsigned)
 python ../dataset.py compile -d ./ --tool limma -t dataset_test_005 --pvalue 0.05 --updown --reindex_df ../dataprocess/ttest_pval.csv
+
+python dataset.py gen_genelist -f data/GSE3326_1.tsd -t dataset/index
+python dataset.py compile -d data_test/ --tool limma -t dataset/dataset_test_005 --pvalue 0.05 --reindex_file dataset/index.txt --updown --label_index "heat,salt,drought,cold"
+python dataset.py compile -d data/ --tool limma -t dataset/dataset_learn_v2_005 --pvalue 0.05 --reindex_file dataset/index.txt  --updown --label_index "heat,salt,drought,cold" --filters "Species:Arabidopsis Thaliana,MinRepCnt:2"
 ```
 
 Then DEG infomation will be stored at `dataset_test.csv` matrix.

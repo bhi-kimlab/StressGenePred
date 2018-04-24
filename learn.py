@@ -1,15 +1,18 @@
 import pandas as pd
+import numpy as np
 import sys,os,argparse
 import tensorflow as tf
+from model_v2 import Model
 
 
 # TODO
 # df: weight dataframe
 def reduce_df_dim(df_weight):
     # reduce index and generate new dataframe with up/down column
+    cols_orig = df_weight.columns.tolist()
     col_cnt = df_weight.shape[1]
-    mat_weight = np.reshape(df_weight, (-1, col_cnt*2))    # gather up / down at one row
-    idx = [ x.split('_',1)[0] for x in self.datas.index[0::2] ]
+    mat_weight = np.reshape(df_weight.values, (-1, col_cnt*2))    # gather up / down at one row
+    idx = [ x.split('_',1)[0] for x in df_weight.index.tolist()[0::2] ]
     cols = []
     for n in ["up", "down"]:
         for n2 in df_weight.columns.tolist():
@@ -17,7 +20,7 @@ def reduce_df_dim(df_weight):
     df = pd.DataFrame(mat_weight, columns=cols, index=idx)
 
     # regenerate max value to new stress value
-    for l in cols:
+    for l in cols_orig:
         is_up_deg = (df["up_%s"%l] > df["down_%s"%l])
         new_col = is_up_deg * df["up_%s"%l] + np.logical_not(is_up_deg) * df["down_%s"%l]
         df[ l ] = new_col             # non-scaled related to other stresses
@@ -43,8 +46,6 @@ def main():
             help="sample-expression matrix csv file")
     parser.add_argument("file_label",
             help="sample-label matrix csv file")
-    parser.add_argument("--label_index", type=str,
-            help="do when label reindexing is necessary (separated by comma)")
     parser.add_argument("--reduce_updown", action="store_true",
             help="do reduce_max by 2 (when input data is separated updown)")
     parser.add_argument("--reopti_stress", action="store_true",
@@ -60,37 +61,36 @@ def main():
     args = parser.parse_args()
 
     # load & arrange files first
-    df_expr = pd.DataFrame(args.file_expr, index_col=0)
-    df_label = pd.DataFrame(args.file_label, index_col=0)
+    df_expr = pd.read_csv(args.file_expr, index_col=0)
+    df_label = pd.read_csv(args.file_label, index_col=0)
+    """
     if (args.label_index):
         labels = args.label_index.split(',')
-        df_label = df_label.reindex(index=labels, fill_value=0)
+        df_label = df_label.reindex(columns=labels, fill_value=0)
+    """
 
     # now set environments and import
-    os.environ['CNT_FEATURE'] = str(df_expr.shape[0])
-    os.environ['CNT_SAMPLE'] = str(df_expr.shape[1])
-    os.environ['CNT_LABEL'] = str(df_label.shape[0])
-    import model_v2 as model
+    model = Model()
+    model.epoch_count = args.epoch_count
+    model.use_batch = args.batch_size > 0
+    model.batch_size = args.batch_size
+    model.learning_rate = args.rate
+    model.init(df_expr.shape[0], df_label.shape[1])
 
-    saver = tf.train.Saver()
     with tf.Session() as sess:
         # do learning
-        model.epoch_count = args.epoch_count
-        model.use_batch = args.batch_size > 0
-        model.batch_size = args.batch_size
-        model.learning_rate = args.rate
-        model.init(sess)
-        model.learn(sess)
+        model.init_sess(sess)
+        model.learn(sess, df_expr.transpose(), df_label)
 
         # save result if necessary
         if (args.save):
-            saver.save(sess, args.save+'.ckpt')
+            model.save(sess, args.save+'.ckpt')
         if (args.save_csv):
-            r = model_v2.get_result(sess)   # returns dict
+            r = model.get_result(sess, df_expr, df_label)   # returns dict
             if (args.reduce_updown):
-                r['generative'] = reduce_df_dim(r['generative'])
+                r['generator'] = reduce_df_dim(r['generator'])
             if (args.reopti_stress):
-                r['generative'] = stress_reduce_to_others(r['generative'], df_label.index.tolist())
+                r['generator'] = stress_reduce_to_others(r['generator'], df_label.index.tolist())
             for k,df in r.items():
                 df.to_csv("%s_%s.csv" % (args.save_csv, k))
 
