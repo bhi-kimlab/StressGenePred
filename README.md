@@ -6,7 +6,7 @@
 With prepared dataset,
 
 ```
-python learn.py dataset/dataset_learn_v2_005.limma.csv dataset/dataset_learn_v2_005.label.csv --reduce_updown --save output/model_v2 --save_csv output/model_v2 --epoch_count 2000
+python learn.py dataset/dataset_learn_v2_005.limma.csv dataset/dataset_learn_v2_005.label.csv --reduce_updown --save output/model_v2 --save_csv output/model_v2 --epoch_count 1000 --batch_size 0
 ```
 
 ### Testing prediction /w learnt parameter

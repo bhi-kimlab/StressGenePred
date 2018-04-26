@@ -16,27 +16,38 @@ class Predictor(object):
         self.output = tf.placeholder(dtype='float', shape=[None,None])
         self.w = tf.Variable(tf.fill( (1,n_label), 10.0 ))
         self.b = tf.Variable(tf.fill( (1,n_label), -0.3 ))
+        # parameter for confidence; high beta, low confidence (high entropy)
+        self.beta = 0.005 #tf.Variable(0.01)
         self.rate = rate
+        self.target_max_entropy = 1.2
 
     def predict(self):
         p = tf.sigmoid(tf.multiply((self.input+self.b),self.w))
+        #return p
         return p / tf.reshape(tf.reduce_sum(p,axis=1),(-1,1))
 
 
     def loss(self):
         # KL divergence calculate for CMCL
         def CMCL_loss_v2():
-            beta = 0.01  # parameter for confidence; high beta, low confidence (high entropy)
+            
             p_y = self.predict()
-            return -beta * tf.log(p_y)
+            return -self.beta * tf.log(p_y)
 
         # 1. loss reduction (in case of major one)
         # 2. KL divergence (in case of minor one)
         label = self.output
-        loss_e = label * (self.output-self.predict())**2
+        pred = self.predict()
+        loss_e = label * (self.output-pred)**2
         KL_label = 1.0 - label
         loss_kl = KL_label * CMCL_loss_v2()
-        loss = loss_e + loss_kl
+        """
+        # 3. target entropy
+        entropy = -tf.reduce_sum(pred * tf.log(pred), axis=1)
+        loss_entropy = tf.nn.relu(tf.reduce_max(entropy)-self.target_max_entropy)
+        """
+        loss_entropy = 0
+        loss = tf.reduce_sum(loss_e + loss_kl) + loss_entropy
         return loss
 
     def learn(self):
@@ -85,7 +96,7 @@ class Generator(object):
         #features = self.features / tf.square(tf.reduce_sum(weight, axis=1))
 
         out = tf.matmul(features, weight)
-        out = out / tf.reshape(tf.reduce_sum(out, axis=1) + 0.001, (-1,1))  # normalize output + pseudovalue
+        #out = out / tf.reshape(tf.reduce_sum(out, axis=1) + 0.001, (-1,1))  # normalize output + pseudovalue   --> DON'T!
         return out
 
     # (DEPRECIATED)
@@ -231,6 +242,8 @@ class Model(object):
         df_predictor = pd.DataFrame(data=np.concatenate((w,b),axis=0),
                 index=['weight','b'],
                 columns=df_label.columns)
+        #beta = sess.run(learner_pred.beta)
+        #df_predictor['beta'] = [beta,0]
 
 
         return {
