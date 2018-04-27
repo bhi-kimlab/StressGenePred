@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import sys,os,argparse
 import tensorflow as tf
-from model_v2 import Model
+from model_v21 import Model
 
 
 # TODO
