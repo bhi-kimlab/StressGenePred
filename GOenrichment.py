@@ -13,6 +13,7 @@ class GOenrichment(object):
         self.background_genes = set()
         self.cut_pvalue = 0
         self.cut_cnt = 0
+        self.max_trait_cut = 0
         self.asc = True
 
     def load(self, path):
@@ -32,6 +33,21 @@ class GOenrichment(object):
                     dic_gene2trait[gene]=set()
                 dic_gene2trait[gene].add(trait)
                 dic_trait2gene[trait].add(gene)
+
+        # check threshold for trait
+        if (self.max_trait_cut > 0):
+            genes_to_removed = []
+            for g,t in dic_gene2trait.items():
+                if (len(t) > self.max_trait_cut):
+                    genes_to_removed.append(g)
+            print '%d genes will be removed by max_trait_cut option.' % len(genes_to_removed)
+            for g in genes_to_removed:
+                traits = dic_gene2trait[g]
+                for t in traits:
+                    dic_trait2gene[t].remove(g)
+                del dic_gene2trait[g]
+
+        # finalize
         for trait in dic_trait2gene.keys():
             dic_trait2ratio[trait]=float(len(dic_trait2gene[trait]))/len(dic_gene2trait)
         self.dic_gene2trait = dic_gene2trait
@@ -107,6 +123,7 @@ def main():
     parser.add_argument('--column_name', metavar='str', help='column name including pvalue(separate by comma) (all columns are used if not specified)')
     parser.add_argument('-o', '--output', metavar='str', help='output to print result')
     parser.add_argument('--label_file', metavar='str', help='label to selectively calculate GOTerm')
+    parser.add_argument('--max_trait_cut', type=int, default=0, help='use when filtering specific-reponsive gene by setting threshold for maximum trait count')
     parser.add_argument('--count_cut', type=int, default=0)
     parser.add_argument('--pvalue_cut', type=float, default=0)
     parser.add_argument('--descending', action='store_true')
@@ -123,10 +140,11 @@ def main():
 
     # load trait2genes file and calculate GSEA for 'each' columns
     go = GOenrichment()
-    go.load(args.trait2genes)
     go.asc = not args.descending
     go.cut_cnt = args.count_cut
     go.pvalue_cut = args.pvalue_cut
+    go.max_trait_cut = args.max_trait_cut
+    go.load(args.trait2genes)
 
     # output result file
     if args.output == 'stdout':

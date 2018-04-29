@@ -50,6 +50,8 @@ def main():
             help="do reduce_max by 2 (when input data is separated updown)")
     parser.add_argument("--reopti_stress", action="store_true",
             help="do weight div by sum of row")
+    parser.add_argument("--onlypred", action="store_true",
+            help="only do learning on predictor")
     parser.add_argument("--save", type=str, default="output/model_v2",
             help="save result in tensorflow-restorable form")
     parser.add_argument("--save_csv", type=str, default="output/model_v2",
@@ -75,11 +77,14 @@ def main():
     model.use_batch = args.batch_size > 0
     model.batch_size = args.batch_size
     model.learning_rate = args.rate
+    model.only_predictor = args.onlypred
     model.init(df_expr.shape[0], df_label.shape[1])
 
     with tf.Session() as sess:
         # do learning
         model.init_sess(sess)
+        if (args.onlypred):
+            model.restore(sess, args.save+'.ckpt')
         model.learn(sess, df_expr.transpose(), df_label)
 
         # save result if necessary

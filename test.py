@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import argparse
-from model_v2 import Model
+from model_v21 import Model
 
 
 # append real prediction & entropy information
@@ -56,15 +56,24 @@ def main():
         model.restore(sess, args.load+'.ckpt')
         # do prediction
         if (args.raw):
-            df_pred = sess.run(model.learner.predict(),
+            mat_pred = sess.run(model.learner.predict(),
                 feed_dict={model.learner.features: df_expr.transpose()})
         else:
             mat_pred = model.predict(sess, df_expr.transpose())
+
         # format pred dataframe
         df_pred = pd.DataFrame(mat_pred, columns=df_label.columns, index=df_expr.columns)
         df_pred = format_pred(df_pred, df_label)
         # save result
         df_pred.to_csv(args.save+'.csv')
+
+        # report learning result
+        pred_label_rowmax = np.reshape(np.max(mat_pred,axis=1), (-1,1))
+        pred_label_logic = (mat_pred == pred_label_rowmax)*1
+        pred_logic = np.all(np.equal(pred_label_logic, df_label), axis=1)
+        pred_logic_true = np.sum(pred_logic*1)
+        pred_logic_false = np.sum(np.logical_not(pred_logic)*1)
+        print 'Learning result: True %d, False %d' % (pred_logic_true, pred_logic_false)
 
 
 if __name__=='__main__':

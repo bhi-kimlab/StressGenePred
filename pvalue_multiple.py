@@ -6,9 +6,9 @@ import pandas as pd
 import numpy as np
 #import statsmodels.stats.multitest as multi
 
-# returns pandas.Series
+# returns pandas.Series (pseudovalue)
 def pval_chi(df):
-    return pd.Series(-2*np.sum(np.log(df), axis=1), index=df.index)
+    return pd.Series(-2*np.sum(np.log(df+0.00001), axis=1), index=df.index)
 
 def main():
     parser=argparse.ArgumentParser(usage='''[pvalue df: sampleid x geneid] [label df: sampleid x stress]''')

@@ -12,35 +12,45 @@ import time
 
 class Predictor(object):
     def __init__(self, n_label, rate):
-        self.input = tf.placeholder(dtype='float', shape=[None,None])
-        self.output = tf.placeholder(dtype='float', shape=[None,None])
-        self.w = tf.Variable(tf.fill( (1,n_label), 10.0 ))
-        self.b = tf.Variable(tf.fill( (1,n_label), -0.3 ))
+        self.input = tf.placeholder(dtype='float', shape=[None,None])       # ( 40000, 4 )
+        self.output = tf.placeholder(dtype='float', shape=[None,None])      # ( werwer )
+        self.w = tf.Variable(tf.fill( (1,n_label), 20.0 ))                  # ( 4 )
+        self.b = tf.Variable(tf.fill( (1,n_label), -0.2 ))
         # parameter for confidence; high beta, low confidence (high entropy)
-        self.beta = 0.005 #tf.Variable(0.01)
+        self.beta = 0.01
         self.rate = rate
-        self.target_max_entropy = 1.2
+
+    # set effective start value (for sigmoid)
+    def assign_b(self, sess, v):
+        sess.run(tf.assign(self.b, v))
 
     def predict(self):
-        p = tf.sigmoid(tf.multiply((self.input+self.b),self.w))
-        #return p
-        return p / tf.reshape(tf.reduce_sum(p,axis=1),(-1,1))
+        # average by weight (divide by expressing feature count)
+        #f_count = tf.reduce_sum(self.input)
+        p = tf.sigmoid(tf.multiply(self.input + self.b, self.w))
+        return p
+        #return p / tf.reshape(tf.reduce_sum(p,axis=1),(-1,1))               # normalization(sum to 1) by row
 
+    def assign_bias(self, b):
+        return tf.assign(self.b, b)
 
     def loss(self):
         # KL divergence calculate for CMCL
         def CMCL_loss_v2():
-            
             p_y = self.predict()
             return -self.beta * tf.log(p_y)
+
+        # to calculate loss, make predict result normalized in row
+        pred = self.predict()
+        pred = pred / tf.reshape(tf.reduce_sum(pred, axis=1), (-1,1))
 
         # 1. loss reduction (in case of major one)
         # 2. KL divergence (in case of minor one)
         label = self.output
-        pred = self.predict()
         loss_e = label * (self.output-pred)**2
         KL_label = 1.0 - label
         loss_kl = KL_label * CMCL_loss_v2()
+        #loss_kl = 0
         """
         # 3. target entropy
         entropy = -tf.reduce_sum(pred * tf.log(pred), axis=1)
@@ -52,10 +62,15 @@ class Predictor(object):
 
     def learn(self):
         return tf.train.AdamOptimizer(self.rate).minimize(self.loss())
+    def learn_b(self):
+        return tf.train.AdamOptimizer(self.rate).minimize(self.loss(), var_list=[self.b,])
 
 
 class Generator(object):
     def __init__(self, n_features, n_label, rate):
+        self.n_features = n_features
+        self.n_label = n_label
+
         # make placeholder
         self.features = tf.placeholder(dtype='float', shape=[None,n_features])
         self.label = tf.placeholder(dtype='float', shape=[None,n_label])
@@ -67,36 +82,32 @@ class Generator(object):
 
     def loss(self):
         weight = self.weight
-        #weight = tf.nn.dropout( self.weight, 0.2 )
-        features = tf.matmul(self.label, tf.transpose(weight))
-        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.features,logits=features)
-        # too big weight is okay? (TODO - add weight to loss?)
-        return loss
+        features = tf.matmul(self.label, tf.transpose(weight))  # pred_features
+        loss_pred_square = (tf.sigmoid(features) - self.features) ** 2
+        loss_pred_sigmoid = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.features,logits=features)
+        #loss_pred_softmax = tf.nn.softmax_cross_entropy_with_logits(labels=self.label,logits=features)
+        loss_weight = tf.square(self.weight)
+        # integrated loss (relate to other stresses)
+        # TODO: reduce it's dimension, if updown is true?
+        updown = True
+        if (updown):
+            weight_feature = tf.reshape(self.weight, (self.n_features/2,-1))
+        else:
+            weight_feature = self.weight
+        loss_integrate = tf.reduce_sum(tf.sigmoid(weight_feature), axis=1)**2
+        return tf.reduce_mean(loss_pred_sigmoid) + tf.reduce_mean(loss_integrate)*0.05
 
     def learn(self):
         loss = self.loss()
-        loss = tf.reduce_mean(loss) + tf.reduce_mean(tf.square(self.weight))*0.01
-
-        # additional loss: prediction loss
-        out = tf.matmul(self.features, self.weight)
-        loss_predict = tf.nn.softmax_cross_entropy_with_logits(labels=self.label,logits=out)
-        #loss += loss_predict
-
         return tf.train.AdamOptimizer(self.rate).minimize( loss )
 
     def predict(self):
-        ## average weight in column, to reduce weight of gene with multiplicate-feature.
-        #weight = self.weight
+        # calculate out probability
+        # (out : reverse calculated; [sample x label])
         weight = tf.sigmoid(self.weight)
-        #weight = weight / tf.reshape(tf.reduce_sum(weight, axis=1), (-1,1)) 
-        #weight = tf.square(weight)
-
-        ## feature input
-        features = self.features
-        #features = self.features / tf.square(tf.reduce_sum(weight, axis=1))
-
-        out = tf.matmul(features, weight)
-        #out = out / tf.reshape(tf.reduce_sum(out, axis=1) + 0.001, (-1,1))  # normalize output + pseudovalue   --> DON'T!
+        out = tf.matmul(self.features, weight)
+        # divide by sum of feature
+        out = out / tf.reshape(tf.reduce_sum(self.features, axis=1) + 0.000001, (-1,1))
         return out
 
     # (DEPRECIATED)
@@ -121,12 +132,13 @@ class Generator(object):
 class Model(object):
     def __init__(self):
         self.epoch_count = 30000
-        self.epoch_pred_count = 5000
+        self.epoch_pred_count = 1000
         self.use_batch = True
         self.batch_size = 40
         self.learning_rate = 0.001
         self.epoch_alert = 50
         self.model_name = "model_v2"
+        self.only_predictor = False
 
 
     def init(self, cnt_feature, cnt_label):
@@ -143,6 +155,7 @@ class Model(object):
 
         self.learner_pred = Predictor(cnt_label,self.learning_rate*10)
         self.op_learn_pred = self.learner_pred.learn()
+        self.op_learn_pred_b = self.learner_pred.learn_b()
 
         self.saver = tf.train.Saver()
 
@@ -169,40 +182,55 @@ class Model(object):
         op_learn = self.op_learn
         op_decode = self.op_decode
         op_loss = self.op_loss
-        op_learn_pred = self.op_learn_pred
 
         print 'learning generative ...'
-        for i in range(self.epoch_count):
-            # adaptive epoch rate?
-            if (i < 100):
-                learner.rate = learning_rate*10
-            elif (i < 1000):
-                learner.rate = learning_rate
+        if (self.only_predictor):
+            print 'skip learning predictor due to option'
+        else:
+            for i in range(self.epoch_count):
+                # adaptive epoch rate?
+                if (i < 100):
+                    learner.rate = learning_rate*10
+                elif (i < 1000):
+                    learner.rate = learning_rate
 
-            if (use_batch):
-                batch_microarrays, batch_labels = TSTools.batch(batch_size, (df_expr.values, df_label.values), dim=0)
-            else:
-                batch_microarrays, batch_labels = df_expr, df_label
+                if (use_batch):
+                    batch_microarrays, batch_labels = TSTools.batch(batch_size, (df_expr.values, df_label.values), dim=0)
+                else:
+                    batch_microarrays, batch_labels = df_expr, df_label
 
-            sess.run(op_learn, feed_dict={
-                learner.features: batch_microarrays,
-                learner.label: batch_labels
-                })
-
-            if (i % self.epoch_alert == 0):
-                loss = sess.run(op_loss, feed_dict={
+                sess.run(op_learn, feed_dict={
                     learner.features: batch_microarrays,
                     learner.label: batch_labels
                     })
-                print 'epoch: %d, loss: %f' % (i, np.mean(loss))
+
+                if (i % self.epoch_alert == 0):
+                    loss = sess.run(op_loss, feed_dict={
+                        learner.features: batch_microarrays,
+                        learner.label: batch_labels
+                        })
+                    print 'epoch: %d, loss: %f' % (i, np.mean(loss))
 
         mat_gen = sess.run(op_decode, feed_dict={
             learner.features: df_expr
             })
 
+        # for debugging
+        print np.hstack( (mat_gen, df_label) )
+
+        print np.mean(mat_gen, axis=0)
+        sess.run(learner_pred.assign_bias(-np.reshape(np.mean(mat_gen, axis=0), (1,-1)) ))
+
         print 'learning predictor ...'
+        """
+        for _ in range(100):
+            sess.run(self.op_learn_pred_b, feed_dict={
+                learner_pred.input: mat_gen,
+                learner_pred.output: df_label
+                })
+        """
         for _ in range(self.epoch_pred_count):
-            sess.run(op_learn_pred, feed_dict={
+            sess.run(self.op_learn_pred, feed_dict={
                 learner_pred.input: mat_gen,
                 learner_pred.output: df_label
                 })
