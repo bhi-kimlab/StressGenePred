@@ -32,7 +32,7 @@ python GOenrichment.py $1/output/params_generator.csv --trait2genes GOBPname2gen
 ```
 
 * <code>--trait2genes</code> Path to trait-to-gene file.
-* <code>--column_name</code> Path to trait-to-gene file.
+* <code>--column_name</code> Column names including p-value.
 * <code>--count_cut</code> How many gene set to be shown?
 * <code>-o</code> Path to output
 * <code>--descending</code> Result data in descending p-value order
