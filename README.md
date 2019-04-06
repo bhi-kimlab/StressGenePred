@@ -1,4 +1,4 @@
-#### Stress Predictor based on Machine Learning
+# Stress Predictor based on Machine Learning
 
 
 ### Learning
