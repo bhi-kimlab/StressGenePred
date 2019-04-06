@@ -1,5 +1,13 @@
 _old
+_temp
 .tmp
 *.tmp
 *.swp
 *.pyc
+.RData
+.Rhistory
+.tmp_*
+data/
+private/
+others/
+output/

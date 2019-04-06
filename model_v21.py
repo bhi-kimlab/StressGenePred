@@ -34,31 +34,31 @@ class Predictor(object):
     def assign_bias(self, b):
         return tf.assign(self.b, b)
 
+    # use CMCL loss
     def loss(self):
-        # KL divergence calculate for CMCL
-        def CMCL_loss_v2():
-            p_y = self.predict()
-            return -self.beta * tf.log(p_y)
+        loss_softmax = False    # use softmax instead of CMCL
 
-        # to calculate loss, make predict result normalized in row
-        pred = self.predict()
-        pred = pred / tf.reshape(tf.reduce_sum(pred, axis=1), (-1,1))
+        if (loss_softmax):
+            pred = self.predict()
+            return tf.nn.softmax_cross_entropy_with_logits(labels=self.output, logits=pred)
+        else:
+            # KL divergence calculate for CMCL
+            def CMCL_loss_v2():
+                p_y = self.predict()
+                return -self.beta * tf.log(p_y)
 
-        # 1. loss reduction (in case of major one)
-        # 2. KL divergence (in case of minor one)
-        label = self.output
-        loss_e = label * (self.output-pred)**2
-        KL_label = 1.0 - label
-        loss_kl = KL_label * CMCL_loss_v2()
-        #loss_kl = 0
-        """
-        # 3. target entropy
-        entropy = -tf.reduce_sum(pred * tf.log(pred), axis=1)
-        loss_entropy = tf.nn.relu(tf.reduce_max(entropy)-self.target_max_entropy)
-        """
-        loss_entropy = 0
-        loss = tf.reduce_sum(loss_e + loss_kl) + loss_entropy
-        return loss
+            # to calculate loss, make predict result normalized in row
+            pred = self.predict()
+            pred = pred / tf.reshape(tf.reduce_sum(pred, axis=1), (-1,1))
+
+            # 1. loss reduction (in case of major one)
+            # 2. KL divergence (in case of minor one)
+            label = self.output
+            loss_e = label * (self.output-pred)**2
+            KL_label = 1.0 - label
+            loss_kl = KL_label * CMCL_loss_v2()
+            loss = tf.reduce_sum(loss_e + loss_kl)
+            return loss
 
     def learn(self):
         return tf.train.AdamOptimizer(self.rate).minimize(self.loss())
@@ -95,7 +95,7 @@ class Generator(object):
         else:
             weight_feature = self.weight
         loss_integrate = tf.reduce_sum(tf.sigmoid(weight_feature), axis=1)**2
-        return tf.reduce_mean(loss_pred_sigmoid) + tf.reduce_mean(loss_integrate)*0.05
+        return tf.reduce_mean(loss_pred_sigmoid) + tf.reduce_mean(loss_integrate)*0.06
 
     def learn(self):
         loss = self.loss()

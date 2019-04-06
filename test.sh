@@ -1,15 +1,22 @@
 #!/bin/bash
 
 # automatically 
-# args: [path-to-output]
+# args: [path-to-output] [toolname]
+
+#
+# available tools:
+#
+# limma
+# FC
+#
 
 #TOOLNAME="limma_adjp"
 TOOLNAME=$2
 #PARAMS="--tool ${TOOLNAME} --raw --pvalue 0.05 "
 PARAMS="--tool ${TOOLNAME} --raw --pvalue 0.05"
 EPOCH=1000
-DO_DATASET=0
-DO_LEARNING=1
+DO_DATASET=1
+DO_LEARNING=0
 echo $PARAMS
 
 # make path
@@ -18,7 +25,7 @@ set -e
 
 if [ $DO_DATASET -eq 1 ]; then
 # dataset generate
-python dataset.py compile -d data/ $PARAMS -t $1/dataset_learn_005 --reindex_file dataset/index.txt  --updown --label_index "heat,salt,drought,cold" --filters "Species:Arabidopsis Thaliana,MinRepCnt:2"
+python dataset.py compile -d data_learn/ $PARAMS -t $1/dataset_learn_005 --reindex_file dataset/index.txt  --updown --label_index "heat,salt,drought,cold" --filters "Species:Arabidopsis Thaliana,MinRepCnt:2"
 python dataset.py compile -d data_test/ $PARAMS -t $1/dataset_test_005 --reindex_file dataset/index.txt  --updown --label_index "heat,salt,drought,cold"
 fi
 

@@ -46,6 +46,12 @@ class GOenrichment(object):
                 for t in traits:
                     dic_trait2gene[t].remove(g)
                 del dic_gene2trait[g]
+            traits_to_removed = []
+            for t,gs in dic_trait2gene.items():
+                if len(gs) == 0:
+                    traits_to_removed.append(t)
+            for t in traits_to_removed:
+                del dic_trait2gene[t]
 
         # finalize
         for trait in dic_trait2gene.keys():
@@ -128,6 +134,7 @@ def main():
     parser.add_argument('--pvalue_cut', type=float, default=0)
     parser.add_argument('--descending', action='store_true')
     parser.add_argument('--method', required=False, metavar='[fisher|binomial]', default='fisher', help='method for statistical test')
+    parser.add_argument('--printGO', action='store_true', help='just print out GOterms and exit without taking any action.')
     args = parser.parse_args()
 
     df = pd.read_csv(args.dfpath, index_col=0)
@@ -145,6 +152,12 @@ def main():
     go.pvalue_cut = args.pvalue_cut
     go.max_trait_cut = args.max_trait_cut
     go.load(args.trait2genes)
+
+    # in case of printGO
+    if args.printGO:
+        for t,genes in go.dic_trait2gene.items():
+            print '\t'.join((t, ','.join(genes)))
+        exit(0)
 
     # output result file
     if args.output == 'stdout':
